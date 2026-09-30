@@ -1,3 +1,8 @@
+# This script detects the most prominent motion blob in a video.  It
+# attempts to fit a rectangle around the blob, which produces a rough
+# orientation.  It paints the video frame-by-frame with the rectangle
+# around the detected shape.
+
 #import numpy as np
 import cv2
 import numpy

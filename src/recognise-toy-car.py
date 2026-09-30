@@ -1,3 +1,8 @@
+# This script looks for highly-saturated regions of colour in an
+# image.  In practice this reliably picks up traffic cones and
+# people's feet, but tends to detect an actual toy car as two separate
+# blobs.
+
 import numpy as np
 import cv2
 import numpy
