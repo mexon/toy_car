@@ -21,8 +21,8 @@ The groups for this assignment are available in the Ostfalia Open Moodle system.
 
 The following section describe some of the technical details for this assignment. 
 
-![Sample Image 1](https://i.postimg.cc/Pfwm0cdB/Screenshot-2026-09-28-141425.png) | ![Sample Image 2](https://i.postimg.cc/L6kj81Yx/Screenshot-2026-09-28-141441.png) | ![Sample Image 3](https://i.postimg.cc/xTGL1zJs/Screenshot-2026-09-28-141456.png) |
-![Sample Image 4](https://i.postimg.cc/k49m9zkz/Screenshot-2026-09-28-151150.png) | ![Sample Image 5](https://i.postimg.cc/gJDP04W7/Screenshot-2026-09-28-151225.png) | ![Sample Image 6](https://i.postimg.cc/vBzdmXsj/Screenshot-2026-09-28-151243.png) |
+![Sample Image 1](Screenshot-2026-09-28-141425.png) | ![Sample Image 2](Screenshot-2026-09-28-141441.png) | ![Sample Image 3](Screenshot-2026-09-28-141456.png) |
+![Sample Image 4](Screenshot-2026-09-28-151150.png) | ![Sample Image 5](Screenshot-2026-09-28-151225.png) | ![Sample Image 6](Screenshot-2026-09-28-151243.png) |
 
 ## 3D Mapping
 
