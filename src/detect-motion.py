@@ -4,6 +4,7 @@ import os
 import time
 import socket
 import math
+import sys
 
 # ==========================================
 # 1. UDP 網路設定 (作業規格: Port 5000)
@@ -16,7 +17,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # 2. 影片路徑處理 (防範路徑與檔名錯誤)
 # ==========================================
 script_dir = os.path.dirname(os.path.abspath(__file__))
-video_path = os.path.join(script_dir, 'toycar-clip.mp4')
+video_path = sys.argv[1]
 
 if not os.path.exists(video_path):
     print(f"錯誤：找不到檔案 '{video_path}'，請確認影片檔名稱與位置！")
