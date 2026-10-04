@@ -36,6 +36,8 @@ def process_image(filename):
     resized = cv2.resize(annotated, (1024, 1024))
     cv2.imshow('Frame', resized)
     key = cv2.waitKey(0)
+    if key == ord('q'):
+        exit()
 
 directory = "toy_car_photos"
 
