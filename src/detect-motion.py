@@ -50,6 +50,12 @@ pts_real = np.array([
 # 計算單應性矩陣 H
 H_matrix, _ = cv2.findHomography(pts_image, pts_real)
 
+# Car histograms computed by script calculate-histogram-for-car.py
+car_hue_histograms = {
+    'car1' : [0.0, 0.21, 0.51, 0.53, 0.44, 0.3, 0.15, 0.18],
+    'car2' : [0.05, 0.07, 0.09, 0.15, 0.38, 0.78, 0.29, 0.31],
+}
+
 def image_to_real(u, v, H):
     """將影像像素 (u, v) 轉換為真實世界 (X, Y) mm"""
     pt = np.array([u, v, 1.0], dtype=np.float32).reshape(3, 1)
@@ -66,57 +72,75 @@ class ToyCarTracker:
         self.car_name = car_name
         self.previous_frame = None
         self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
-        
+
         # 歷史狀態 (用於計算速度與角速度)
         self.prev_x = None
         self.prev_y = None
         self.prev_theta = None
         self.prev_time_us = None
-        
+
         # 平滑濾波變數
         self.vx_smooth = 0.0
         self.vy_smooth = 0.0
         self.omega_smooth = 0.0
-        
+
+    # Recognise a car:
+    # 1. Extract the hue values of the pixels in the detected car area
+    # 2. Compute an 8-way histogram of hue values
+    # 3. Compare by vector distance against hue histograms from training data of various cars
+    # 4. Take the best match
+    def recognise_car(self, frame, mask):
+        hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        frame_histogram = cv2.calcHist([hsv_frame], [1], mask, [8], [0,256])
+        frame_histogram_norm = np.linalg.norm(frame_histogram)
+        frame_histogram_normalised = frame_histogram / frame_histogram_norm
+        distances = [[car_name, np.linalg.norm(frame_histogram_normalised - car_histogram)]
+                     for car_name, car_histogram in car_hue_histograms.items()]
+        best_match = max(distances, key=lambda x:x[1])
+        return best_match[0]
+
     def process_frame(self, frame, current_time_us):
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
+
         if self.previous_frame is None:
             self.previous_frame = gray_frame
             return frame, None
-        
+
         # 1. 運動影格相減 (Frame Differencing)
         difference = cv2.absdiff(gray_frame, self.previous_frame)
         self.previous_frame = gray_frame
 
         blurred = cv2.filter2D(difference, -1, self.blur_kernel)
         max_diff = cv2.minMaxLoc(blurred)[1]
-        
+
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
         car_detected = False
+        car_name = "unrecognised"
         u, w = -1, -1
         real_x, real_y = -1000.0, -1000.0
         theta = 0.0
         dx, dy = 0.0, 0.0
         omega = 0.0
-        
+
         if max_diff >= 10:
             ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
+
             contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             if contours:
                 cnt = max(contours, key=cv2.contourArea)
                 if cv2.contourArea(cnt) > 100:
+                    car_name = self.recognise_car(frame, thresholded)
                     car_detected = True
-                    
+
                     # 取得最小外接矩形
                     rect = cv2.minAreaRect(cnt)
                     (u_center, w_center), (width, height), angle = rect
                     u, w = int(u_center), int(w_center)
-                    
+
                     # 計算真實座標 (mm)
                     real_x, real_y = image_to_real(u_center, w_center, H_matrix)
-                    
+
                     # 計算朝向角度 (theta, degrees)
                     theta = angle
 
@@ -127,17 +151,17 @@ class ToyCarTracker:
                             # 速度 = 位置變化 / 時間 (mm/s)
                             raw_dx = (real_x - self.prev_x) / dt
                             raw_dy = (real_y - self.prev_y) / dt
-                            
+
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (theta - self.prev_theta + 180.0) % 360.0 - 180.0
                             raw_omega = d_theta / dt
-                            
+
                             # 一階指數平滑化
                             alpha = 0.3
                             self.vx_smooth = alpha * raw_dx + (1 - alpha) * self.vx_smooth
                             self.vy_smooth = alpha * raw_dy + (1 - alpha) * self.vy_smooth
                             self.omega_smooth = alpha * raw_omega + (1 - alpha) * self.omega_smooth
-                            
+
                             dx, dy = self.vx_smooth, self.vy_smooth
                             omega = self.omega_smooth
 
@@ -150,13 +174,13 @@ class ToyCarTracker:
                     box = np.int64(cv2.boxPoints(rect))
                     cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
                     cv2.circle(frame, (u, w), 5, (0, 0, 255), -1)
-                    cv2.putText(frame, f"ID: {self.car_name}", (u + 10, w - 10),
+                    cv2.putText(frame, f"ID: {car_name}", (u + 10, w - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
         # 格式: timestamp:"car_id",x,y,theta,dx,dy,omega,u,w\n
         udp_output_string = (
-            f'{current_time_us}:"{self.car_name}",'
+            f'{current_time_us}:"{car_name}",'
             f'{real_x:.1f},{real_y:.1f},{theta:.1f},'
             f'{dx:.1f},{dy:.1f},{omega:.1f},'
             f'{u},{w}\n'
@@ -186,7 +210,7 @@ while cap.isOpened():
     if output_msg:
         # 1. 終端機即時印出訊息
         print(output_msg, end='')
-        
+
         # 2. UTF-8 編碼並透過 UDP 發送至 Port 5000
         sock.sendto(output_msg.encode('utf-8'), (UDP_IP, UDP_PORT))
 
