@@ -96,21 +96,22 @@ class CarData:
         cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
+    # Angle changes must be with +/- 180°
+    def normalise_angle_change(self, angle):
+        return (angle + 180.0) % 360.0 - 180.0
+
     def car_detected(self, frame, current_time_us, contour):
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
         car_detected = False
         car_name = "unrecognised"
-        
-        # 取得最小外接矩形
+
+        # 取得最小外接矩形,朝向角度 (car_orientation, degrees)
         rect = cv2.minAreaRect(contour)
-        car_center_image, (width, height), angle = rect
+        car_center_image, (width, height), car_orientation = rect
         car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
 
         # 計算真實座標 (mm)
         car_center_real = image_coords_to_real(car_center_image, H_matrix)
-
-        # 計算朝向角度 (car_orientation, degrees)
-        car_orientation = angle
 
         # 計算速度 velocity_smooth 與 角速度 (angular_velocity_smooth)
         if self.prev_time_us is not None:
@@ -120,7 +121,7 @@ class CarData:
                 raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
 
                 # 修正角度跨越 +/-180 度問題
-                d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
+                d_theta = self.normalise_angle_change(car_orientation - self.prev_car_orientation)
                 raw_omega = d_theta / dt
 
                 # 一階指數平滑化
