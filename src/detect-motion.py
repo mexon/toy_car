@@ -135,11 +135,11 @@ class ToyCarTracker:
 
                     # 取得最小外接矩形
                     rect = cv2.minAreaRect(cnt)
-                    (car_center_image_x, car_center_image_y), (width, height), angle = rect
-                    car_center_image_x_int, car_center_image_y_int = int(car_center_image_x), int(car_center_image_y)
+                    car_center_image, (width, height), angle = rect
+                    car_center_image_x_int, car_center_image_y_int = int(car_center_image[0]), int(car_center_image[1])
 
                     # 計算真實座標 (mm)
-                    car_center_real = image_to_real(car_center_image_x, car_center_image_y, H_matrix)
+                    car_center_real = image_to_real(car_center_image[0], car_center_image[1], H_matrix)
 
                     # 計算朝向角度 (car_orientation, degrees)
                     car_orientation = angle
