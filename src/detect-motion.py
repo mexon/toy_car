@@ -88,6 +88,12 @@ class ToyCarTracker:
         self.v_smooth = (0.0, 0.0)
         self.angular_velocity_smooth = 0.0
 
+    def smooth_scalar(self, new_value, old_value):
+        return self.alpha * new_value + (1.0 - self.alpha) * old_value
+
+    def smooth_vector(self, new_value, old_value):
+        return [self.smooth_scalar(new, old) for new, old in zip(new_value, old_value)]
+
     # Recognise a car:
     # 1. Extract the hue values of the pixels in the detected car area
     # 2. Compute an 8-way histogram of hue values
@@ -163,7 +169,7 @@ class ToyCarTracker:
                             # 一階指數平滑化
                             self.v_smooth = (self.alpha * raw_dx + (1 - self.alpha) * self.v_smooth[0],
                                              self.alpha * raw_dy + (1 - self.alpha) * self.v_smooth[1])
-                            self.angular_velocity_smooth = self.alpha * raw_omega + (1 - self.alpha) * self.angular_velocity_smooth
+                            self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
                             car_center_diff = self.v_smooth
                             angular_velocity = self.angular_velocity_smooth
