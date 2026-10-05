@@ -117,7 +117,7 @@ class ToyCarTracker:
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
         car_detected = False
         car_name = "unrecognised"
-        u, w = -1, -1
+        car_center_image_x_int, car_center_image_y_int = -1, -1
         real_x, real_y = -1000.0, -1000.0
         theta = 0.0
         dx, dy = 0.0, 0.0
@@ -137,7 +137,7 @@ class ToyCarTracker:
                     # 取得最小外接矩形
                     rect = cv2.minAreaRect(cnt)
                     (u_center, w_center), (width, height), angle = rect
-                    u, w = int(u_center), int(w_center)
+                    car_center_image_x_int, car_center_image_y_int = int(u_center), int(w_center)
 
                     # 計算真實座標 (mm)
                     real_x, real_y = image_to_real(u_center, w_center, H_matrix)
@@ -174,8 +174,8 @@ class ToyCarTracker:
                     # 繪製車子框線與資訊
                     box = np.int64(cv2.boxPoints(rect))
                     cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
-                    cv2.circle(frame, (u, w), 5, (0, 0, 255), -1)
-                    cv2.putText(frame, f"ID: {car_name}", (u + 10, w - 10),
+                    cv2.circle(frame, (car_center_image_x_int, car_center_image_y_int), 5, (0, 0, 255), -1)
+                    cv2.putText(frame, f"ID: {car_name}", (car_center_image_x_int + 10, car_center_image_y_int - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
@@ -184,7 +184,7 @@ class ToyCarTracker:
             f'{current_time_us}:"{car_name}",'
             f'{real_x:.1f},{real_y:.1f},{theta:.1f},'
             f'{dx:.1f},{dy:.1f},{omega:.1f},'
-            f'{u},{w}\n'
+            f'{car_center_image_x_int},{car_center_image_y_int}\n'
         )
 
         return frame, udp_output_string
