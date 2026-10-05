@@ -77,7 +77,7 @@ class ToyCarTracker:
         # 歷史狀態 (用於計算速度與角速度)
         self.prev_x = None
         self.prev_y = None
-        self.prev_theta = None
+        self.prev_car_orientation = None
         self.prev_time_us = None
 
         # 平滑濾波變數
@@ -119,8 +119,8 @@ class ToyCarTracker:
         car_name = "unrecognised"
         car_center_image_x_int, car_center_image_y_int = -1, -1
         car_center_real_x, car_center_real_y = -1000.0, -1000.0
-        theta = 0.0
-        dx, dy = 0.0, 0.0
+        car_orientation = 0.0
+        car_center_x_diff, car_center_y_diff = 0.0, 0.0
         omega = 0.0
 
         if max_diff >= 10:
@@ -142,10 +142,10 @@ class ToyCarTracker:
                     # 計算真實座標 (mm)
                     car_center_real_x, car_center_real_y = image_to_real(car_center_image_x, car_center_image_y, H_matrix)
 
-                    # 計算朝向角度 (theta, degrees)
-                    theta = angle
+                    # 計算朝向角度 (car_orientation, degrees)
+                    car_orientation = angle
 
-                    # 計算速度 (dx, dy) 與 角速度 (omega)
+                    # 計算速度 (car_center_x_diff, car_center_y_diff) 與 角速度 (omega)
                     if self.prev_time_us is not None:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
@@ -154,7 +154,7 @@ class ToyCarTracker:
                             raw_dy = (car_center_real_y - self.prev_y) / dt
 
                             # 修正角度跨越 +/-180 度問題
-                            d_theta = (theta - self.prev_theta + 180.0) % 360.0 - 180.0
+                            d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
                             raw_omega = d_theta / dt
 
                             # 一階指數平滑化
@@ -163,12 +163,12 @@ class ToyCarTracker:
                             self.vy_smooth = alpha * raw_dy + (1 - alpha) * self.vy_smooth
                             self.omega_smooth = alpha * raw_omega + (1 - alpha) * self.omega_smooth
 
-                            dx, dy = self.vx_smooth, self.vy_smooth
+                            car_center_x_diff, car_center_y_diff = self.vx_smooth, self.vy_smooth
                             omega = self.omega_smooth
 
                     # 更新上一影格紀錄
                     self.prev_x, self.prev_y = car_center_real_x, car_center_real_y
-                    self.prev_theta = theta
+                    self.prev_car_orientation = car_orientation
                     self.prev_time_us = current_time_us
 
                     # 繪製車子框線與資訊
@@ -179,11 +179,11 @@ class ToyCarTracker:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
-        # 格式: timestamp:"car_id",x,y,theta,dx,dy,omega,u,w\n
+        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,omega,u,w\n
         udp_output_string = (
             f'{current_time_us}:"{car_name}",'
-            f'{car_center_real_x:.1f},{car_center_real_y:.1f},{theta:.1f},'
-            f'{dx:.1f},{dy:.1f},{omega:.1f},'
+            f'{car_center_real_x:.1f},{car_center_real_y:.1f},{car_orientation:.1f},'
+            f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{omega:.1f},'
             f'{car_center_image_x_int},{car_center_image_y_int}\n'
         )
 
