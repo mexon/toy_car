@@ -64,6 +64,9 @@ def image_to_real(u, v, H):
     real_pt /= real_pt[2]
     return float(real_pt[0][0]), float(real_pt[1][0])
 
+def image_coords_to_real(coords, H):
+    return image_to_real(coords[0], coords[1], H)
+
 
 # ==========================================
 # 4. 賽車追蹤與狀態計算類別
@@ -139,7 +142,7 @@ class ToyCarTracker:
                     car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
 
                     # 計算真實座標 (mm)
-                    car_center_real = image_to_real(car_center_image[0], car_center_image[1], H_matrix)
+                    car_center_real = image_coords_to_real(car_center_image, H_matrix)
 
                     # 計算朝向角度 (car_orientation, degrees)
                     car_orientation = angle
