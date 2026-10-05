@@ -68,16 +68,9 @@ def image_coords_to_real(coords, H):
     return image_to_real(coords[0], coords[1], H)
 
 
-# ==========================================
-# 4. 賽車追蹤與狀態計算類別
-# ==========================================
-class ToyCarTracker:
-    alpha = 0.3
-
+class CarData:
     def __init__(self):
         self.car_name = "unrecognised"
-        self.previous_frame = None
-        self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
 
         # 歷史狀態 (用於計算速度與角速度)
         self.prev_car_center_real = [None, None]
@@ -87,6 +80,17 @@ class ToyCarTracker:
         # 平滑濾波變數
         self.v_smooth = (0.0, 0.0)
         self.angular_velocity_smooth = 0.0
+
+# ==========================================
+# 4. 賽車追蹤與狀態計算類別
+# ==========================================
+class ToyCarTracker:
+    alpha = 0.3
+
+    def __init__(self):
+        self.previous_frame = None
+        self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
+        self.car_data = CarData()
 
     def smooth_scalar(self, new_value, old_value):
         return self.alpha * new_value + (1.0 - self.alpha) * old_value
@@ -147,7 +151,7 @@ class ToyCarTracker:
             if contours:
                 cnt = max(contours, key=cv2.contourArea)
                 if cv2.contourArea(cnt) > 100:
-                    car_name = self.recognise_car(frame, thresholded)
+                    self.car_data.car_name = self.recognise_car(frame, thresholded)
                     car_detected = True
 
                     # 取得最小外接矩形
@@ -162,35 +166,35 @@ class ToyCarTracker:
                     car_orientation = angle
 
                     # 計算速度 car_center_diff 與 角速度 (angular_velocity)
-                    if self.prev_time_us is not None:
-                        dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
+                    if self.car_data.prev_time_us is not None:
+                        dt = (current_time_us - self.car_data.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
+                            raw_diff = np.divide(np.subtract(car_center_real, self.car_data.prev_car_center_real), dt)
 
                             # 修正角度跨越 +/-180 度問題
-                            d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
+                            d_theta = (car_orientation - self.car_data.prev_car_orientation + 180.0) % 360.0 - 180.0
                             raw_omega = d_theta / dt
 
                             # 一階指數平滑化
-                            self.v_smooth = self.smooth_vector(raw_diff, self.v_smooth)
-                            self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
+                            self.car_data.v_smooth = self.smooth_vector(raw_diff, self.car_data.v_smooth)
+                            self.car_data.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.car_data.angular_velocity_smooth)
 
-                            car_center_diff = self.v_smooth
-                            angular_velocity = self.angular_velocity_smooth
+                            car_center_diff = self.car_data.v_smooth
+                            angular_velocity = self.car_data.angular_velocity_smooth
 
                     # 更新上一影格紀錄
-                    self.prev_car_center_real = car_center_real
-                    self.prev_car_orientation = car_orientation
-                    self.prev_time_us = current_time_us
+                    self.car_data.prev_car_center_real = car_center_real
+                    self.car_data.prev_car_orientation = car_orientation
+                    self.car_data.prev_time_us = current_time_us
 
                     # 繪製車子框線與資訊
-                    self.annotate_image(frame, rect, car_center_image_int, car_name)
+                    self.annotate_image(frame, rect, car_center_image_int, self.car_data.car_name)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
         # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
         udp_output_string = (
-            f'{current_time_us}:"{car_name}",'
+            f'{current_time_us}:"{self.car_data.car_name}",'
             f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
             f'{car_center_diff[0]:.1f},{car_center_diff[1]:.1f},{angular_velocity:.1f},'
             f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
