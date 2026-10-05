@@ -122,7 +122,7 @@ class ToyCarTracker:
         car_center_image_int = [-1, -1]
         car_center_real = [-1000.0, -1000.0]
         car_orientation = 0.0
-        car_center_x_diff, car_center_y_diff = 0.0, 0.0
+        car_center_diff = [0.0, 0.0]
         angular_velocity = 0.0
 
         if max_diff >= 10:
@@ -147,7 +147,7 @@ class ToyCarTracker:
                     # 計算朝向角度 (car_orientation, degrees)
                     car_orientation = angle
 
-                    # 計算速度 (car_center_x_diff, car_center_y_diff) 與 角速度 (angular_velocity)
+                    # 計算速度 car_center_diff 與 角速度 (angular_velocity)
                     if self.prev_time_us is not None:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
@@ -165,7 +165,7 @@ class ToyCarTracker:
                             self.vy_smooth = alpha * raw_dy + (1 - alpha) * self.vy_smooth
                             self.angular_velocity_smooth = alpha * raw_omega + (1 - alpha) * self.angular_velocity_smooth
 
-                            car_center_x_diff, car_center_y_diff = self.vx_smooth, self.vy_smooth
+                            car_center_diff = self.vx_smooth, self.vy_smooth
                             angular_velocity = self.angular_velocity_smooth
 
                     # 更新上一影格紀錄
@@ -185,7 +185,7 @@ class ToyCarTracker:
         udp_output_string = (
             f'{current_time_us}:"{car_name}",'
             f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
-            f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{angular_velocity:.1f},'
+            f'{car_center_diff[0]:.1f},{car_center_diff[1]:.1f},{angular_velocity:.1f},'
             f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
         )
 
