@@ -69,6 +69,8 @@ def image_coords_to_real(coords, H):
 
 
 class CarData:
+    alpha = 0.3
+
     def __init__(self):
         self.car_name = "unrecognised"
 
@@ -80,17 +82,6 @@ class CarData:
         # 平滑濾波變數
         self.v_smooth = (0.0, 0.0)
         self.angular_velocity_smooth = 0.0
-
-# ==========================================
-# 4. 賽車追蹤與狀態計算類別
-# ==========================================
-class ToyCarTracker:
-    alpha = 0.3
-
-    def __init__(self):
-        self.previous_frame = None
-        self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
-        self.car_data = CarData()
 
     def smooth_scalar(self, new_value, old_value):
         return self.alpha * new_value + (1.0 - self.alpha) * old_value
@@ -104,6 +95,71 @@ class ToyCarTracker:
         cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
         cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    def car_detected(self, frame, current_time_us, contour):
+        # 預設為未偵測到賽車 (-1000.0, -1000.0)
+        car_detected = False
+        car_name = "unrecognised"
+        car_center_image_int = [-1, -1]
+        car_center_real = [-1000.0, -1000.0]
+        car_orientation = 0.0
+        car_center_diff = [0.0, 0.0]
+        angular_velocity = 0.0
+        
+        # 取得最小外接矩形
+        rect = cv2.minAreaRect(contour)
+        car_center_image, (width, height), angle = rect
+        car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
+
+        # 計算真實座標 (mm)
+        car_center_real = image_coords_to_real(car_center_image, H_matrix)
+
+        # 計算朝向角度 (car_orientation, degrees)
+        car_orientation = angle
+
+        # 計算速度 car_center_diff 與 角速度 (angular_velocity)
+        if self.prev_time_us is not None:
+            dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
+            if dt > 0:
+                # 速度 = 位置變化 / 時間 (mm/s)
+                raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
+
+                # 修正角度跨越 +/-180 度問題
+                d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
+                raw_omega = d_theta / dt
+
+                # 一階指數平滑化
+                self.v_smooth = self.smooth_vector(raw_diff, self.v_smooth)
+                self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
+
+                car_center_diff = self.v_smooth
+                angular_velocity = self.angular_velocity_smooth
+
+        # 更新上一影格紀錄
+        self.prev_car_center_real = car_center_real
+        self.prev_car_orientation = car_orientation
+        self.prev_time_us = current_time_us
+
+        # 繪製車子框線與資訊
+        self.annotate_image(frame, rect, car_center_image_int, self.car_name)
+
+        # 封裝輸出資訊字串 (符合老師要求格式)
+        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
+        return (
+            f'{current_time_us}:"{self.car_name}",'
+            f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
+            f'{car_center_diff[0]:.1f},{car_center_diff[1]:.1f},{angular_velocity:.1f},'
+            f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
+        )
+
+# ==========================================
+# 4. 賽車追蹤與狀態計算類別
+# ==========================================
+class ToyCarTracker:
+    def __init__(self):
+        self.previous_frame = None
+        self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
+        self.car_data = CarData()
 
     # Recognise a car:
     # 1. Extract the hue values of the pixels in the detected car area
@@ -134,14 +190,7 @@ class ToyCarTracker:
         blurred = cv2.filter2D(difference, -1, self.blur_kernel)
         max_diff = cv2.minMaxLoc(blurred)[1]
 
-        # 預設為未偵測到賽車 (-1000.0, -1000.0)
-        car_detected = False
-        car_name = "unrecognised"
-        car_center_image_int = [-1, -1]
-        car_center_real = [-1000.0, -1000.0]
-        car_orientation = 0.0
-        car_center_diff = [0.0, 0.0]
-        angular_velocity = 0.0
+        udp_output_string = ""
 
         if max_diff >= 10:
             ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
@@ -154,51 +203,7 @@ class ToyCarTracker:
                     self.car_data.car_name = self.recognise_car(frame, thresholded)
                     car_detected = True
 
-                    # 取得最小外接矩形
-                    rect = cv2.minAreaRect(cnt)
-                    car_center_image, (width, height), angle = rect
-                    car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
-
-                    # 計算真實座標 (mm)
-                    car_center_real = image_coords_to_real(car_center_image, H_matrix)
-
-                    # 計算朝向角度 (car_orientation, degrees)
-                    car_orientation = angle
-
-                    # 計算速度 car_center_diff 與 角速度 (angular_velocity)
-                    if self.car_data.prev_time_us is not None:
-                        dt = (current_time_us - self.car_data.prev_time_us) / 1000000.0  # 轉為秒
-                        if dt > 0:
-                            # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_diff = np.divide(np.subtract(car_center_real, self.car_data.prev_car_center_real), dt)
-
-                            # 修正角度跨越 +/-180 度問題
-                            d_theta = (car_orientation - self.car_data.prev_car_orientation + 180.0) % 360.0 - 180.0
-                            raw_omega = d_theta / dt
-
-                            # 一階指數平滑化
-                            self.car_data.v_smooth = self.smooth_vector(raw_diff, self.car_data.v_smooth)
-                            self.car_data.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.car_data.angular_velocity_smooth)
-
-                            car_center_diff = self.car_data.v_smooth
-                            angular_velocity = self.car_data.angular_velocity_smooth
-
-                    # 更新上一影格紀錄
-                    self.car_data.prev_car_center_real = car_center_real
-                    self.car_data.prev_car_orientation = car_orientation
-                    self.car_data.prev_time_us = current_time_us
-
-                    # 繪製車子框線與資訊
-                    self.annotate_image(frame, rect, car_center_image_int, self.car_data.car_name)
-
-        # 封裝輸出資訊字串 (符合老師要求格式)
-        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
-        udp_output_string = (
-            f'{current_time_us}:"{self.car_data.car_name}",'
-            f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
-            f'{car_center_diff[0]:.1f},{car_center_diff[1]:.1f},{angular_velocity:.1f},'
-            f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
-        )
+                    udp_output_string = self.car_data.car_detected(frame, current_time_us, cnt)
 
         return frame, udp_output_string
 
