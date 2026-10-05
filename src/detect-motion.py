@@ -159,16 +159,16 @@ class ToyCarTracker:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_dx = (car_center_real[0] - self.prev_car_center_real[0]) / dt
-                            raw_dy = (car_center_real[1] - self.prev_car_center_real[1]) / dt
+                            raw_diff = ((car_center_real[0] - self.prev_car_center_real[0]) / dt,
+                                        (car_center_real[1] - self.prev_car_center_real[1]) / dt)
 
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
                             raw_omega = d_theta / dt
 
                             # 一階指數平滑化
-                            self.v_smooth = (self.alpha * raw_dx + (1 - self.alpha) * self.v_smooth[0],
-                                             self.alpha * raw_dy + (1 - self.alpha) * self.v_smooth[1])
+                            self.v_smooth = (self.alpha * raw_diff[0] + (1 - self.alpha) * self.v_smooth[0],
+                                             self.alpha * raw_diff[1] + (1 - self.alpha) * self.v_smooth[1])
                             self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
                             car_center_diff = self.v_smooth
