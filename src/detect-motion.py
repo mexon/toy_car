@@ -94,6 +94,13 @@ class ToyCarTracker:
     def smooth_vector(self, new_value, old_value):
         return [self.smooth_scalar(new, old) for new, old in zip(new_value, old_value)]
 
+    def annotate_image(self, frame, rect, car_center_image_int, car_name):
+        box = np.int64(cv2.boxPoints(rect))
+        cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
+        cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
+        cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
     # Recognise a car:
     # 1. Extract the hue values of the pixels in the detected car area
     # 2. Compute an 8-way histogram of hue values
@@ -178,11 +185,7 @@ class ToyCarTracker:
                     self.prev_time_us = current_time_us
 
                     # 繪製車子框線與資訊
-                    box = np.int64(cv2.boxPoints(rect))
-                    cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
-                    cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
-                    cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                    self.annotate_image(frame, rect, car_center_image_int, car_name)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
         # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
