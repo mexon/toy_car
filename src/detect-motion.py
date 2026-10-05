@@ -118,7 +118,7 @@ class ToyCarTracker:
         car_detected = False
         car_name = "unrecognised"
         car_center_image_x_int, car_center_image_y_int = -1, -1
-        real_x, real_y = -1000.0, -1000.0
+        car_center_real_x, car_center_real_y = -1000.0, -1000.0
         theta = 0.0
         dx, dy = 0.0, 0.0
         omega = 0.0
@@ -136,11 +136,11 @@ class ToyCarTracker:
 
                     # 取得最小外接矩形
                     rect = cv2.minAreaRect(cnt)
-                    (u_center, w_center), (width, height), angle = rect
-                    car_center_image_x_int, car_center_image_y_int = int(u_center), int(w_center)
+                    (car_center_image_x, car_center_image_y), (width, height), angle = rect
+                    car_center_image_x_int, car_center_image_y_int = int(car_center_image_x), int(car_center_image_y)
 
                     # 計算真實座標 (mm)
-                    real_x, real_y = image_to_real(u_center, w_center, H_matrix)
+                    car_center_real_x, car_center_real_y = image_to_real(car_center_image_x, car_center_image_y, H_matrix)
 
                     # 計算朝向角度 (theta, degrees)
                     theta = angle
@@ -150,8 +150,8 @@ class ToyCarTracker:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_dx = (real_x - self.prev_x) / dt
-                            raw_dy = (real_y - self.prev_y) / dt
+                            raw_dx = (car_center_real_x - self.prev_x) / dt
+                            raw_dy = (car_center_real_y - self.prev_y) / dt
 
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (theta - self.prev_theta + 180.0) % 360.0 - 180.0
@@ -167,7 +167,7 @@ class ToyCarTracker:
                             omega = self.omega_smooth
 
                     # 更新上一影格紀錄
-                    self.prev_x, self.prev_y = real_x, real_y
+                    self.prev_x, self.prev_y = car_center_real_x, car_center_real_y
                     self.prev_theta = theta
                     self.prev_time_us = current_time_us
 
@@ -182,7 +182,7 @@ class ToyCarTracker:
         # 格式: timestamp:"car_id",x,y,theta,dx,dy,omega,u,w\n
         udp_output_string = (
             f'{current_time_us}:"{car_name}",'
-            f'{real_x:.1f},{real_y:.1f},{theta:.1f},'
+            f'{car_center_real_x:.1f},{car_center_real_y:.1f},{theta:.1f},'
             f'{dx:.1f},{dy:.1f},{omega:.1f},'
             f'{car_center_image_x_int},{car_center_image_y_int}\n'
         )
