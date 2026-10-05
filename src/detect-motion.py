@@ -80,7 +80,7 @@ class CarData:
         self.prev_time_us = None
 
         # 平滑濾波變數
-        self.v_smooth = (0.0, 0.0)
+        self.velocity_smooth = (0.0, 0.0)
         self.angular_velocity_smooth = 0.0
 
     def smooth_scalar(self, new_value, old_value):
@@ -112,7 +112,7 @@ class CarData:
         # 計算朝向角度 (car_orientation, degrees)
         car_orientation = angle
 
-        # 計算速度 v_smooth 與 角速度 (angular_velocity_smooth)
+        # 計算速度 velocity_smooth 與 角速度 (angular_velocity_smooth)
         if self.prev_time_us is not None:
             dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
             if dt > 0:
@@ -124,7 +124,7 @@ class CarData:
                 raw_omega = d_theta / dt
 
                 # 一階指數平滑化
-                self.v_smooth = self.smooth_vector(raw_diff, self.v_smooth)
+                self.velocity_smooth = self.smooth_vector(raw_diff, self.velocity_smooth)
                 self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
         # 更新上一影格紀錄
@@ -140,7 +140,7 @@ class CarData:
         return (
             f'{current_time_us}:"{self.car_name}",'
             f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
-            f'{self.v_smooth[0]:.1f},{self.v_smooth[1]:.1f},{self.angular_velocity_smooth:.1f},'
+            f'{self.velocity_smooth[0]:.1f},{self.velocity_smooth[1]:.1f},{self.angular_velocity_smooth:.1f},'
             f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
         )
 
