@@ -83,7 +83,7 @@ class ToyCarTracker:
         # 平滑濾波變數
         self.vx_smooth = 0.0
         self.vy_smooth = 0.0
-        self.omega_smooth = 0.0
+        self.angular_velocity_smooth = 0.0
 
     # Recognise a car:
     # 1. Extract the hue values of the pixels in the detected car area
@@ -121,7 +121,7 @@ class ToyCarTracker:
         car_center_real_x, car_center_real_y = -1000.0, -1000.0
         car_orientation = 0.0
         car_center_x_diff, car_center_y_diff = 0.0, 0.0
-        omega = 0.0
+        angular_velocity = 0.0
 
         if max_diff >= 10:
             ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
@@ -145,7 +145,7 @@ class ToyCarTracker:
                     # 計算朝向角度 (car_orientation, degrees)
                     car_orientation = angle
 
-                    # 計算速度 (car_center_x_diff, car_center_y_diff) 與 角速度 (omega)
+                    # 計算速度 (car_center_x_diff, car_center_y_diff) 與 角速度 (angular_velocity)
                     if self.prev_time_us is not None:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
@@ -161,10 +161,10 @@ class ToyCarTracker:
                             alpha = 0.3
                             self.vx_smooth = alpha * raw_dx + (1 - alpha) * self.vx_smooth
                             self.vy_smooth = alpha * raw_dy + (1 - alpha) * self.vy_smooth
-                            self.omega_smooth = alpha * raw_omega + (1 - alpha) * self.omega_smooth
+                            self.angular_velocity_smooth = alpha * raw_omega + (1 - alpha) * self.angular_velocity_smooth
 
                             car_center_x_diff, car_center_y_diff = self.vx_smooth, self.vy_smooth
-                            omega = self.omega_smooth
+                            angular_velocity = self.angular_velocity_smooth
 
                     # 更新上一影格紀錄
                     self.prev_x, self.prev_y = car_center_real_x, car_center_real_y
@@ -179,11 +179,11 @@ class ToyCarTracker:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
-        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,omega,u,w\n
+        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
         udp_output_string = (
             f'{current_time_us}:"{car_name}",'
             f'{car_center_real_x:.1f},{car_center_real_y:.1f},{car_orientation:.1f},'
-            f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{omega:.1f},'
+            f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{angular_velocity:.1f},'
             f'{car_center_image_x_int},{car_center_image_y_int}\n'
         )
 
