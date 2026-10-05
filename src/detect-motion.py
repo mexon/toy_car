@@ -116,7 +116,7 @@ class ToyCarTracker:
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
         car_detected = False
         car_name = "unrecognised"
-        car_center_image_x_int, car_center_image_y_int = -1, -1
+        car_center_image_int = [-1, -1]
         car_center_real = [-1000.0, -1000.0]
         car_orientation = 0.0
         car_center_x_diff, car_center_y_diff = 0.0, 0.0
@@ -136,7 +136,7 @@ class ToyCarTracker:
                     # 取得最小外接矩形
                     rect = cv2.minAreaRect(cnt)
                     car_center_image, (width, height), angle = rect
-                    car_center_image_x_int, car_center_image_y_int = int(car_center_image[0]), int(car_center_image[1])
+                    car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
 
                     # 計算真實座標 (mm)
                     car_center_real = image_to_real(car_center_image[0], car_center_image[1], H_matrix)
@@ -173,8 +173,8 @@ class ToyCarTracker:
                     # 繪製車子框線與資訊
                     box = np.int64(cv2.boxPoints(rect))
                     cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
-                    cv2.circle(frame, (car_center_image_x_int, car_center_image_y_int), 5, (0, 0, 255), -1)
-                    cv2.putText(frame, f"ID: {car_name}", (car_center_image_x_int + 10, car_center_image_y_int - 10),
+                    cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
+                    cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
@@ -183,7 +183,7 @@ class ToyCarTracker:
             f'{current_time_us}:"{car_name}",'
             f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
             f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{angular_velocity:.1f},'
-            f'{car_center_image_x_int},{car_center_image_y_int}\n'
+            f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
         )
 
         return frame, udp_output_string
