@@ -100,11 +100,6 @@ class CarData:
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
         car_detected = False
         car_name = "unrecognised"
-        car_center_image_int = [-1, -1]
-        car_center_real = [-1000.0, -1000.0]
-        car_orientation = 0.0
-        car_center_diff = [0.0, 0.0]
-        angular_velocity = 0.0
         
         # 取得最小外接矩形
         rect = cv2.minAreaRect(contour)
@@ -117,7 +112,7 @@ class CarData:
         # 計算朝向角度 (car_orientation, degrees)
         car_orientation = angle
 
-        # 計算速度 car_center_diff 與 角速度 (angular_velocity)
+        # 計算速度 v_smooth 與 角速度 (angular_velocity_smooth)
         if self.prev_time_us is not None:
             dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
             if dt > 0:
@@ -132,9 +127,6 @@ class CarData:
                 self.v_smooth = self.smooth_vector(raw_diff, self.v_smooth)
                 self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
-                car_center_diff = self.v_smooth
-                angular_velocity = self.angular_velocity_smooth
-
         # 更新上一影格紀錄
         self.prev_car_center_real = car_center_real
         self.prev_car_orientation = car_orientation
@@ -144,11 +136,11 @@ class CarData:
         self.annotate_image(frame, rect, car_center_image_int, self.car_name)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
-        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
+        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity_smooth,u,w\n
         return (
             f'{current_time_us}:"{self.car_name}",'
             f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
-            f'{car_center_diff[0]:.1f},{car_center_diff[1]:.1f},{angular_velocity:.1f},'
+            f'{self.v_smooth[0]:.1f},{self.v_smooth[1]:.1f},{self.angular_velocity_smooth:.1f},'
             f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
         )
 
