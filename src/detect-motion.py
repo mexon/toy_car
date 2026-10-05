@@ -75,8 +75,8 @@ class ToyCarTracker:
         self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
 
         # 歷史狀態 (用於計算速度與角速度)
-        self.prev_x = None
-        self.prev_y = None
+        self.prev_car_center_real_x = None
+        self.prev_car_center_real_y = None
         self.prev_car_orientation = None
         self.prev_time_us = None
 
@@ -150,8 +150,8 @@ class ToyCarTracker:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_dx = (car_center_real[0] - self.prev_x) / dt
-                            raw_dy = (car_center_real[1] - self.prev_y) / dt
+                            raw_dx = (car_center_real[0] - self.prev_car_center_real_x) / dt
+                            raw_dy = (car_center_real[1] - self.prev_car_center_real_y) / dt
 
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
@@ -167,7 +167,7 @@ class ToyCarTracker:
                             angular_velocity = self.angular_velocity_smooth
 
                     # 更新上一影格紀錄
-                    self.prev_x, self.prev_y = car_center_real
+                    self.prev_car_center_real_x, self.prev_car_center_real_y = car_center_real
                     self.prev_car_orientation = car_orientation
                     self.prev_time_us = current_time_us
 
