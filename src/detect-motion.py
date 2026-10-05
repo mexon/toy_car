@@ -74,8 +74,8 @@ def image_coords_to_real(coords, H):
 class ToyCarTracker:
     alpha = 0.3
 
-    def __init__(self, car_name="Red Racer"):
-        self.car_name = car_name
+    def __init__(self):
+        self.car_name = "unrecognised"
         self.previous_frame = None
         self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
 
@@ -202,7 +202,7 @@ class ToyCarTracker:
 # ==========================================
 # 5. 主程式迴圈
 # ==========================================
-tracker = ToyCarTracker(car_name="Red Racer")
+tracker = ToyCarTracker()
 start_time = time.time()
 
 while cap.isOpened():
