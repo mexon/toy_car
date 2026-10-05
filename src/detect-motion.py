@@ -166,8 +166,7 @@ class ToyCarTracker:
                             raw_omega = d_theta / dt
 
                             # 一階指數平滑化
-                            self.v_smooth = (self.alpha * raw_diff[0] + (1 - self.alpha) * self.v_smooth[0],
-                                             self.alpha * raw_diff[1] + (1 - self.alpha) * self.v_smooth[1])
+                            self.v_smooth = self.smooth_vector(raw_diff, self.v_smooth)
                             self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
                             car_center_diff = self.v_smooth
