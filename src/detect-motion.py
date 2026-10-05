@@ -216,7 +216,8 @@ while cap.isOpened():
         sock.sendto(output_msg.encode('utf-8'), (UDP_IP, UDP_PORT))
 
     # 顯示即時畫面
-    cv2.imshow('Global Vision Server', processed_frame)
+    resized = cv2.resize(processed_frame, (1024, 1024))
+    cv2.imshow('Global Vision Server', resized)
 
     key = cv2.waitKey(30) & 0xFF
     if key == ord('q'):
