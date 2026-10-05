@@ -118,7 +118,7 @@ class ToyCarTracker:
         car_detected = False
         car_name = "unrecognised"
         car_center_image_x_int, car_center_image_y_int = -1, -1
-        car_center_real_x, car_center_real_y = -1000.0, -1000.0
+        car_center_real = [-1000.0, -1000.0]
         car_orientation = 0.0
         car_center_x_diff, car_center_y_diff = 0.0, 0.0
         angular_velocity = 0.0
@@ -140,7 +140,7 @@ class ToyCarTracker:
                     car_center_image_x_int, car_center_image_y_int = int(car_center_image_x), int(car_center_image_y)
 
                     # 計算真實座標 (mm)
-                    car_center_real_x, car_center_real_y = image_to_real(car_center_image_x, car_center_image_y, H_matrix)
+                    car_center_real = image_to_real(car_center_image_x, car_center_image_y, H_matrix)
 
                     # 計算朝向角度 (car_orientation, degrees)
                     car_orientation = angle
@@ -150,8 +150,8 @@ class ToyCarTracker:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_dx = (car_center_real_x - self.prev_x) / dt
-                            raw_dy = (car_center_real_y - self.prev_y) / dt
+                            raw_dx = (car_center_real[0] - self.prev_x) / dt
+                            raw_dy = (car_center_real[1] - self.prev_y) / dt
 
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
@@ -167,7 +167,7 @@ class ToyCarTracker:
                             angular_velocity = self.angular_velocity_smooth
 
                     # 更新上一影格紀錄
-                    self.prev_x, self.prev_y = car_center_real_x, car_center_real_y
+                    self.prev_x, self.prev_y = car_center_real
                     self.prev_car_orientation = car_orientation
                     self.prev_time_us = current_time_us
 
@@ -182,7 +182,7 @@ class ToyCarTracker:
         # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity,u,w\n
         udp_output_string = (
             f'{current_time_us}:"{car_name}",'
-            f'{car_center_real_x:.1f},{car_center_real_y:.1f},{car_orientation:.1f},'
+            f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
             f'{car_center_x_diff:.1f},{car_center_y_diff:.1f},{angular_velocity:.1f},'
             f'{car_center_image_x_int},{car_center_image_y_int}\n'
         )
