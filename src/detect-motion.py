@@ -72,6 +72,8 @@ def image_coords_to_real(coords, H):
 # 4. 賽車追蹤與狀態計算類別
 # ==========================================
 class ToyCarTracker:
+    alpha = 0.3
+    
     def __init__(self, car_name="Red Racer"):
         self.car_name = car_name
         self.previous_frame = None
@@ -160,10 +162,9 @@ class ToyCarTracker:
                             raw_omega = d_theta / dt
 
                             # 一階指數平滑化
-                            alpha = 0.3
-                            self.vx_smooth = alpha * raw_dx + (1 - alpha) * self.vx_smooth
-                            self.vy_smooth = alpha * raw_dy + (1 - alpha) * self.vy_smooth
-                            self.angular_velocity_smooth = alpha * raw_omega + (1 - alpha) * self.angular_velocity_smooth
+                            self.vx_smooth = self.alpha * raw_dx + (1 - self.alpha) * self.vx_smooth
+                            self.vy_smooth = self.alpha * raw_dy + (1 - self.alpha) * self.vy_smooth
+                            self.angular_velocity_smooth = self.alpha * raw_omega + (1 - self.alpha) * self.angular_velocity_smooth
 
                             car_center_diff = self.vx_smooth, self.vy_smooth
                             angular_velocity = self.angular_velocity_smooth
