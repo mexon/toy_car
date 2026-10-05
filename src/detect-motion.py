@@ -113,20 +113,28 @@ class CarData:
         # 計算真實座標 (mm)
         car_center_real = image_coords_to_real(car_center_image, H_matrix)
 
+        if self.prev_time_us is None:
+            self.prev_car_center_real = car_center_real
+            self.prev_car_orientation = car_orientation
+            self.prev_time_us = current_time_us
+            return "no data yet\n"
+
+        if current_time_us == self.prev_time_us:
+            raise RuntimeError('Called twice on same frame')
+
         # 計算速度 velocity_smooth 與 角速度 (angular_velocity_smooth)
-        if self.prev_time_us is not None:
-            dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
-            if dt > 0:
-                # 速度 = 位置變化 / 時間 (mm/s)
-                raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
+        dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
 
-                # 修正角度跨越 +/-180 度問題
-                d_theta = self.normalise_angle_change(car_orientation - self.prev_car_orientation)
-                raw_omega = d_theta / dt
+        # 速度 = 位置變化 / 時間 (mm/s)
+        raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
 
-                # 一階指數平滑化
-                self.velocity_smooth = self.smooth_vector(raw_diff, self.velocity_smooth)
-                self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
+        # 修正角度跨越 +/-180 度問題
+        d_theta = self.normalise_angle_change(car_orientation - self.prev_car_orientation)
+        raw_omega = d_theta / dt
+
+        # 一階指數平滑化
+        self.velocity_smooth = self.smooth_vector(raw_diff, self.velocity_smooth)
+        self.angular_velocity_smooth = self.smooth_scalar(raw_omega, self.angular_velocity_smooth)
 
         # 更新上一影格紀錄
         self.prev_car_center_real = car_center_real
@@ -161,6 +169,7 @@ class ToyCarTracker:
     # 4. Take the best match
     def recognise_car(self, frame, mask):
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
         frame_histogram = cv2.calcHist([hsv_frame], [1], mask, [8], [0,256])
         frame_histogram_norm = np.linalg.norm(frame_histogram)
         frame_histogram_normalised = frame_histogram / frame_histogram_norm
@@ -185,18 +194,24 @@ class ToyCarTracker:
 
         udp_output_string = ""
 
-        if max_diff >= 10:
-            ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
+        if max_diff < 10:
+            return frame, "no car detected"
 
-            contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
 
-            if contours:
-                cnt = max(contours, key=cv2.contourArea)
-                if cv2.contourArea(cnt) > 100:
-                    self.car_data.car_name = self.recognise_car(frame, thresholded)
-                    car_detected = True
+        contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                    udp_output_string = self.car_data.car_detected(frame, current_time_us, cnt)
+        if contours is None:
+            return frame, "no car detected"
+
+        biggest_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(biggest_contour) < 100:
+            return frame, "no car detected"
+
+        self.car_data.car_name = self.recognise_car(frame, thresholded)
+        car_detected = True
+
+        udp_output_string = self.car_data.car_detected(frame, current_time_us, biggest_contour)
 
         return frame, udp_output_string
 
