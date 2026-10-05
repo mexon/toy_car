@@ -159,8 +159,7 @@ class ToyCarTracker:
                         dt = (current_time_us - self.prev_time_us) / 1000000.0  # 轉為秒
                         if dt > 0:
                             # 速度 = 位置變化 / 時間 (mm/s)
-                            raw_diff = ((car_center_real[0] - self.prev_car_center_real[0]) / dt,
-                                        (car_center_real[1] - self.prev_car_center_real[1]) / dt)
+                            raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
 
                             # 修正角度跨越 +/-180 度問題
                             d_theta = (car_orientation - self.prev_car_orientation + 180.0) % 360.0 - 180.0
