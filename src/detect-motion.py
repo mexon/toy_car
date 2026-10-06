@@ -81,7 +81,7 @@ class CarData:
 
         # 歷史狀態 (用於計算速度與角速度)
         self.prev_car_center_real = [None, None]
-        self.prev_car_orientation = None
+        self.prev_car_heading = None
         self.prev_time_us = None
 
         # 平滑濾波變數
@@ -110,9 +110,9 @@ class CarData:
         car_detected = False
         car_name = "unrecognised"
 
-        # 取得最小外接矩形,朝向角度 (car_orientation, degrees)
+        # 取得最小外接矩形,朝向角度 (car_heading, degrees)
         rect = cv2.minAreaRect(contour)
-        car_center_image, (width, height), car_orientation = rect
+        car_center_image, (width, height), car_heading = rect
         car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
 
         # 計算真實座標 (mm)
@@ -120,7 +120,7 @@ class CarData:
 
         if self.prev_time_us is None:
             self.prev_car_center_real = car_center_real
-            self.prev_car_orientation = car_orientation
+            self.prev_car_heading = car_heading
             self.prev_time_us = current_time_us
             return "no data yet\n"
 
@@ -134,7 +134,7 @@ class CarData:
         raw_diff = np.divide(np.subtract(car_center_real, self.prev_car_center_real), dt)
 
         # 修正角度跨越 +/-180 度問題
-        d_theta = self.normalise_angle_change(car_orientation - self.prev_car_orientation)
+        d_theta = self.normalise_angle_change(car_heading - self.prev_car_heading)
         raw_omega = d_theta / dt
 
         # 一階指數平滑化
@@ -143,17 +143,17 @@ class CarData:
 
         # 更新上一影格紀錄
         self.prev_car_center_real = car_center_real
-        self.prev_car_orientation = car_orientation
+        self.prev_car_heading = car_heading
         self.prev_time_us = current_time_us
 
         # 繪製車子框線與資訊
         self.annotate_image(frame, rect, car_center_image_int, self.car_name)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
-        # 格式: timestamp:"car_id",x,y,car_orientation,car_center_x_diff,car_center_y_diff,angular_velocity_smooth,u,w\n
+        # 格式: timestamp:"car_id",x,y,car_heading,car_center_x_diff,car_center_y_diff,angular_velocity_smooth,u,w\n
         return (
             f'{current_time_us}:"{self.car_name}",'
-            f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_orientation:.1f},'
+            f'{car_center_real[0]:.1f},{car_center_real[1]:.1f},{car_heading:.1f},'
             f'{self.velocity_smooth[0]:.1f},{self.velocity_smooth[1]:.1f},{self.angular_velocity_smooth:.1f},'
             f'{car_center_image_int[0]},{car_center_image_int[1]}\n'
         )
