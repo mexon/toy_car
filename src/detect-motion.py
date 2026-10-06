@@ -208,7 +208,10 @@ class ToyCarTracker:
         if cv2.contourArea(biggest_contour) < 100:
             return frame, "no car detected"
 
-        self.car_data.car_name = self.recognise_car(frame, thresholded)
+        (centre_x, centre_y, width, height) = cv2.boundingRect(biggest_contour)
+        car_region = frame[centre_y:centre_y + height, centre_x:centre_x + width]
+        mask_region = thresholded[centre_y:centre_y + height, centre_x:centre_x + width]
+        self.car_data.car_name = self.recognise_car(car_region, mask_region)
         car_detected = True
 
         udp_output_string = self.car_data.car_detected(frame, current_time_us, biggest_contour)
