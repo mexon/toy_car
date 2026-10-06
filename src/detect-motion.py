@@ -80,7 +80,7 @@ class CarData:
         self.car_name = "unrecognised"
 
         # 歷史狀態 (用於計算速度與角速度)
-        self.prev_car_center_real = [None, None]
+        self.prev_car_center_real = None
         self.prev_car_heading = None
         self.prev_time_us = None
 
@@ -403,7 +403,7 @@ class ToyCarTracker:
 
         if self.previous_frame is None:
             self.previous_frame = gray_frame
-            return frame, None
+            return frame, []
 
         # 1. 運動影格相減 (Frame Differencing)
         difference = cv2.absdiff(gray_frame, self.previous_frame)
@@ -415,18 +415,18 @@ class ToyCarTracker:
         udp_output_string = ""
 
         if max_diff < 10:
-            return frame, None
+            return frame, []
 
         ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
 
         contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if contours is None:
-            return frame, None
+            return frame, []
 
         biggest_contour = max(contours, key=cv2.contourArea)
         if cv2.contourArea(biggest_contour) < 100:
-            return frame, None
+            return frame, []
 
         (centre_x, centre_y, width, height) = cv2.boundingRect(biggest_contour)
         car_region = frame[centre_y:centre_y + height, centre_x:centre_x + width]
@@ -437,7 +437,7 @@ class ToyCarTracker:
 
         udp_output_string = self.car_data.car_detected(frame, current_time_us, biggest_contour)
 
-        return frame, udp_output_string
+        return frame, [udp_output_string]
 
 
 def handle_frame(frame):
@@ -445,14 +445,14 @@ def handle_frame(frame):
     current_time_us = int((time.time() - start_time) * 1000000)
 
     # 處理影格
-    processed_frame, output_msg = tracker.process_frame(frame, current_time_us)
+    processed_frame, output_messages = tracker.process_frame(frame, current_time_us)
 
-    if output_msg:
+    for output_message in output_messages:
         # 1. 終端機即時印出訊息
-        print(output_msg, end='')
+        print(output_message, end='')
 
         # 2. UTF-8 編碼並透過 UDP 發送至 Port 5000
-        sock.sendto(output_msg.encode('utf-8'), (UDP_IP, UDP_PORT))
+        sock.sendto(output_message.encode('utf-8'), (UDP_IP, UDP_PORT))
 
     # 顯示即時畫面
     resized = resize_frame(processed_frame, 640, 640)
