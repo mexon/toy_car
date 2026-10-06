@@ -53,8 +53,8 @@ H_matrix, _ = cv2.findHomography(pts_image, pts_real)
 
 # Car histograms computed by script calculate-histogram-for-car.py
 car_hue_histograms = {
-    'car1' : [0.0, 0.21, 0.51, 0.53, 0.44, 0.3, 0.15, 0.18],
-    'car2' : [0.05, 0.07, 0.09, 0.15, 0.38, 0.78, 0.29, 0.31],
+    'yellow/blue' : [0.01, 0.16, 0.55, 0.56, 0.29, 0.12, 0.03, 0.02],
+    'red/blue' : [0.01, 0.02, 0.09, 0.22, 0.39, 0.48, 0.41, 0.50],
 }
 
 def image_to_real(u, v, H):
@@ -66,6 +66,16 @@ def image_to_real(u, v, H):
 
 def image_coords_to_real(coords, H):
     return image_to_real(coords[0], coords[1], H)
+
+def resize_frame(frame, max_width, max_height):
+    (frame_width, frame_height, color_depth) = frame.shape
+    target_size = np.array((frame_height, frame_width))
+    if max_width < target_size[0]:
+        target_size = np.multiply(target_size, max_width / target_size[0])
+    if max_height < target_size[1]:
+        target_size = np.multiply(target_size, max_height / target_size[1])
+    target_size = target_size.astype(int)
+    return cv2.resize(frame, target_size)
 
 
 class CarData:
@@ -94,7 +104,7 @@ class CarData:
         cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
         cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
         cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 1)
 
     # Angle changes must be with +/- 180°
     def normalise_angle_change(self, angle):
@@ -161,6 +171,7 @@ class ToyCarTracker:
         self.previous_frame = None
         self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
         self.car_data = CarData()
+        self.histogram_frames = []
 
     # Recognise a car:
     # 1. Extract the hue values of the pixels in the detected car area
@@ -170,12 +181,28 @@ class ToyCarTracker:
     def recognise_car(self, frame, mask):
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        frame_histogram = cv2.calcHist([hsv_frame], [1], mask, [8], [0,256])
+        saturation = cv2.divide(hsv_frame[:,:,1], 16)
+        lightness = cv2.divide(hsv_frame[:,:,2], 16)
+        color_signal = cv2.multiply(saturation, lightness)
+        max_signal = cv2.minMaxLoc(color_signal)[1]
+        _, thresholded = cv2.threshold(color_signal, max_signal / 2, 255, cv2.THRESH_BINARY)
+
+        # masked = cv2.bitwise_and(frame, frame, mask=thresholded)
+        # cv2.imshow("histogram region", masked)
+        # key = cv2.waitKey(1) & 0xFF
+        # if key == ord('q'):
+        #     exit()
+
+        frame_histogram = cv2.calcHist([hsv_frame], [1], thresholded, [8], [0,256])
         frame_histogram_norm = np.linalg.norm(frame_histogram)
+        if frame_histogram_norm == 0:
+            return None
         frame_histogram_normalised = frame_histogram / frame_histogram_norm
-        distances = [[car_name, np.linalg.norm(frame_histogram_normalised - car_histogram)]
+        frame_histogram_normalised = [round(float(x[0]), 2) for x in frame_histogram_normalised]
+        self.histogram_frames.append(frame_histogram_normalised)
+        distances = [[car_name, np.linalg.norm(np.subtract(frame_histogram_normalised, car_histogram))]
                      for car_name, car_histogram in car_hue_histograms.items()]
-        best_match = max(distances, key=lambda x:x[1])
+        best_match = min(distances, key=lambda x:x[1])
         return best_match[0]
 
     def process_frame(self, frame, current_time_us):
@@ -195,24 +222,25 @@ class ToyCarTracker:
         udp_output_string = ""
 
         if max_diff < 10:
-            return frame, "no car detected"
+            return frame, None
 
         ret, thresholded = cv2.threshold(blurred, max_diff / 2, 255, cv2.THRESH_BINARY)
 
         contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if contours is None:
-            return frame, "no car detected"
+            return frame, None
 
         biggest_contour = max(contours, key=cv2.contourArea)
         if cv2.contourArea(biggest_contour) < 100:
-            return frame, "no car detected"
+            return frame, None
 
         (centre_x, centre_y, width, height) = cv2.boundingRect(biggest_contour)
         car_region = frame[centre_y:centre_y + height, centre_x:centre_x + width]
         mask_region = thresholded[centre_y:centre_y + height, centre_x:centre_x + width]
         self.car_data.car_name = self.recognise_car(car_region, mask_region)
-        car_detected = True
+        if self.car_data.car_name is not None:
+            car_detected = True
 
         udp_output_string = self.car_data.car_detected(frame, current_time_us, biggest_contour)
 
@@ -245,12 +273,15 @@ while cap.isOpened():
         sock.sendto(output_msg.encode('utf-8'), (UDP_IP, UDP_PORT))
 
     # 顯示即時畫面
-    resized = cv2.resize(processed_frame, (1024, 1024))
+    resized = resize_frame(processed_frame, 640, 640)
     cv2.imshow('Global Vision Server', resized)
 
     key = cv2.waitKey(30) & 0xFF
     if key == ord('q'):
         break
+
+average_histogram = np.average(tracker.histogram_frames, axis=0)
+print(average_histogram)
 
 cap.release()
 cv2.destroyAllWindows()
