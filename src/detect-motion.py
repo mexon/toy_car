@@ -23,11 +23,6 @@ if not os.path.exists(video_path):
     print(f"錯誤：找不到檔案 '{video_path}'，請確認影片檔名稱與位置！")
     exit()
 
-cap = cv2.VideoCapture(video_path)
-if not cap.isOpened():
-    print("錯誤：無法開啟影片。")
-    exit()
-
 # ==========================================
 # 3. 2D 像素 -> 3D/2D 真實世界座標校正 (Homography)
 # ==========================================
@@ -247,18 +242,7 @@ class ToyCarTracker:
         return frame, udp_output_string
 
 
-# ==========================================
-# 5. 主程式迴圈
-# ==========================================
-tracker = ToyCarTracker()
-start_time = time.time()
-
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        print("影片播放完畢。")
-        break
-
+def handle_frame(frame):
     # 取得微秒時間戳記 (microseconds relative clock)
     current_time_us = int((time.time() - start_time) * 1000000)
 
@@ -278,11 +262,44 @@ while cap.isOpened():
 
     key = cv2.waitKey(30) & 0xFF
     if key == ord('q'):
+        return None
+
+    return frame
+
+cap = cv2.VideoCapture(video_path)
+if not cap.isOpened():
+    print("錯誤：無法開啟影片。")
+    exit()
+
+frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+frame_rate = int(cap.get(cv2.CAP_PROP_FPS))
+video_output = cv2.VideoWriter("output.mp4", fourcc, frame_rate, (frame_width, frame_height))
+
+tracker = ToyCarTracker()
+start_time = time.time()
+
+# ==========================================
+# 5. 主程式迴圈
+# ==========================================
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        print("影片播放完畢。")
         break
+
+    frame = handle_frame(frame)
+    if frame is None:
+        break
+
+    video_output.write(frame)
 
 average_histogram = np.average(tracker.histogram_frames, axis=0)
 print(average_histogram)
 
 cap.release()
+video_output.release()
+
 cv2.destroyAllWindows()
 sock.close()
