@@ -94,16 +94,212 @@ class CarData:
     def smooth_vector(self, new_value, old_value):
         return [self.smooth_scalar(new, old) for new, old in zip(new_value, old_value)]
 
-    def annotate_image(self, frame, rect, car_center_image_int, car_name):
+    def annotate_image(self, frame, rect, car_center_image_int, car_name, heading, blue_center):
         box = np.int64(cv2.boxPoints(rect))
         cv2.drawContours(frame, [box], -1, (0, 255, 0), 2)
-        cv2.circle(frame, (car_center_image_int[0], car_center_image_int[1]), 5, (0, 0, 255), -1)
-        cv2.putText(frame, f"ID: {car_name}", (car_center_image_int[0] + 10, car_center_image_int[1] - 10),
+        centre_x, centre_y = car_center_image_int
+        cv2.circle(frame, (centre_x, centre_y), 5, (0, 0, 255), -1)
+        cv2.putText(frame, f"ID: {car_name}", (centre_x + 10, centre_y - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 1)
+        cv2.putText(frame, f"Heading: {heading:.1f}", (centre_x + 10, centre_y + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 255), 2)
+
+        # 藍色：偵測到的車頭 marker
+        if blue_center is not None:
+            cv2.circle(frame, blue_center, 8, (255, 0, 0), 2)
+
+        # 紫色箭頭：最終 Heading
+        arrow_length = 80
+        theta = math.radians(heading)
+        end_x = int(centre_x + arrow_length * math.cos(theta))
+        end_y = int(centre_y + arrow_length * math.sin(theta))
+        cv2.arrowedLine(
+            frame, (centre_x, centre_y), (end_x, end_y), (255, 0, 255), 3, tipLength=0.3
+        )
 
     # Angle changes must be with +/- 180°
     def normalise_angle_change(self, angle):
         return (angle + 180.0) % 360.0 - 180.0
+
+    # ======================================
+    # minAreaRect 車身長軸
+    # ======================================
+    def get_body_angle(self, rect):
+        center, (width, height), angle = rect
+
+        if width < height:
+
+            angle += 90.0
+
+        return angle % 180.0
+
+    # =====================================
+    # 移動方向 fallback
+    # 如果藍色偵測不到
+    # 才使用這個方法
+    # ======================================
+
+    def determine_heading_from_motion(self, body_angle, car_center_real):
+        if self.prev_car_center_real is None:
+            if self.prev_car_heading is not None:
+                return self.prev_car_heading
+            return body_angle
+
+        dx = car_center_real[0] - self.prev_car_center_real[0]
+        dy = car_center_real[1] - self.prev_car_center_real[1]
+
+        distance = math.hypot(dx, dy)
+        # 幾乎沒動
+
+        if distance < 5.0:
+            if self.prev_car_heading is not None:
+                return self.prev_car_heading
+            return body_angle
+
+        motion_angle = math.degrees(math.atan2(dy, dx)) % 360.0
+        heading1 = body_angle
+        heading2 = (body_angle + 180.0) % 360.0
+        diff1 = abs(self.normalise_angle_change(heading1 - motion_angle))
+        diff2 = abs(self.normalise_angle_change(heading2 - motion_angle))
+        if diff1 <= diff2:
+            return heading1
+
+        return heading2
+
+    # ======================================
+    # ★ 藍色車頭偵測
+    # ======================================
+    def detect_blue_front(self, frame, rect):
+        # ----------------------------------
+        # BGR -> HSV
+        # ----------------------------------
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # ==================================
+        # 藍色 HSV 範圍
+        # OpenCV Hue：
+        # 0 ~ 179
+        # 這組值之後可以依影片調整
+        # ==================================
+        lower_blue = np.array([105, 35, 35], dtype=np.uint8)
+        upper_blue = np.array([135, 130, 140], dtype=np.uint8)
+        # ----------------------------------
+        # 找所有藍色
+        # ----------------------------------
+        blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
+        # ==================================
+        # 建立車子區域 Mask
+        # 只允許搜尋綠色框附近的藍色
+        # ==================================
+        car_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        box = cv2.boxPoints(rect)
+        box = np.int32(box)
+
+        cv2.fillConvexPoly(car_mask, box, 255)
+        # ----------------------------------
+        # 稍微放大搜尋區域
+        # 因為 frame difference 的框
+        # 不一定完整包含車頭
+        # ----------------------------------
+        kernel = np.ones((15, 15), np.uint8)
+        car_mask = cv2.dilate(car_mask, kernel, iterations=1)
+
+        # =================================
+        # 只留下車子附近的藍色
+        # ==================================
+        blue_car_mask = cv2.bitwise_and(blue_mask, car_mask)
+
+        # ----------------------------------
+        # 去除小雜訊
+        # ----------------------------------
+        clean_kernel = np.ones((3, 3), np.uint8)
+        blue_car_mask = cv2.morphologyEx(blue_car_mask, cv2.MORPH_OPEN, clean_kernel)
+        blue_car_mask = cv2.morphologyEx(blue_car_mask, cv2.MORPH_CLOSE, clean_kernel)
+
+        # ==================================
+        # 找藍色 contour
+        # ==================================
+        contours, _ = cv2.findContours(
+            blue_car_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            return None, blue_car_mask
+
+        # ----------------------------------
+        # 最大藍色區域
+        # ----------------------------------
+        blue_contour = max(contours, key=cv2.contourArea)
+        blue_area = cv2.contourArea(blue_contour)
+
+        # 太小視為雜訊
+        if blue_area < 5:
+            return None, blue_car_mask
+
+        # ==================================
+        # Moment 找藍色區域中心
+        # ==================================
+        M = cv2.moments(blue_contour)
+        if M["m00"] == 0:
+            return None, blue_car_mask
+
+        blue_x = int(M["m10"] / M["m00"])
+        blue_y = int(M["m01"] / M["m00"])
+
+        blue_center = (blue_x, blue_y)
+        return (blue_center, blue_car_mask)
+
+    # ======================================
+    # ★ 利用藍色車頭計算 Heading
+    # ======================================
+    def heading_from_blue(self, car_center_image, blue_center):
+        cx = car_center_image[0]
+        cy = car_center_image[1]
+        bx = blue_center[0]
+        by = blue_center[1]
+
+        # ==================================
+        # 不直接使用 image dx/dy
+        # 將車中心與藍色中心都轉成真實世界座標
+        # 這樣 Heading 與 UDP 的 X/Y 座標系統一致
+        # ==================================
+        car_real = image_to_real(cx, cy, H_matrix)
+        blue_real = image_to_real(bx, by, H_matrix)
+
+        dx = blue_real[0] - car_real[0]
+        dy = blue_real[1] - car_real[1]
+        heading = math.degrees(math.atan2(dy, dx)) % 360.0
+        return heading
+
+    def detect_heading(self, frame, rect, car_center_real):
+        # ==================================
+        # 3. 車身長軸
+        # ==================================
+        body_angle = self.get_body_angle(rect)
+        # ==================================
+        # 4. ★ 找藍色車頭
+        # ==================================
+        blue_center, blue_mask = self.detect_blue_front(frame, rect)
+        # ==================================
+        # 5. 決定 Heading
+        # minAreaRect 決定車身長軸，藍色 marker 決定哪一端是車頭
+        # ==================================
+        if blue_center is not None:
+            heading1 = body_angle
+            heading2 = (body_angle + 180.0) % 360.0
+
+            blue_real = image_to_real(blue_center[0], blue_center[1], H_matrix)
+            marker_dx = blue_real[0] - car_center_real[0]
+            marker_dy = blue_real[1] - car_center_real[1]
+            marker_angle = math.degrees(math.atan2(marker_dy, marker_dx)) % 360.0
+
+            diff1 = abs(self.normalise_angle_change(heading1 - marker_angle))
+            diff2 = abs(self.normalise_angle_change(heading2 - marker_angle))
+            return heading1 if diff1 <= diff2 else heading2
+        else:
+            # 找不到藍色 marker 時才使用移動方向 fallback
+            return self.determine_heading_from_motion(
+                body_angle, car_center_real
+            )
+
 
     def car_detected(self, frame, current_time_us, contour):
         # 預設為未偵測到賽車 (-1000.0, -1000.0)
@@ -112,11 +308,13 @@ class CarData:
 
         # 取得最小外接矩形,朝向角度 (car_heading, degrees)
         rect = cv2.minAreaRect(contour)
-        car_center_image, (width, height), car_heading = rect
+        car_center_image, (width, height), car_heading_from_motion = rect
         car_center_image_int = [int(car_center_image[0]), int(car_center_image[1])]
 
         # 計算真實座標 (mm)
         car_center_real = image_coords_to_real(car_center_image, H_matrix)
+
+        car_heading = self.detect_heading(frame, rect, car_center_real)
 
         if self.prev_time_us is None:
             self.prev_car_center_real = car_center_real
@@ -147,7 +345,7 @@ class CarData:
         self.prev_time_us = current_time_us
 
         # 繪製車子框線與資訊
-        self.annotate_image(frame, rect, car_center_image_int, self.car_name)
+        self.annotate_image(frame, rect, car_center_image_int, self.car_name, car_heading, None)
 
         # 封裝輸出資訊字串 (符合老師要求格式)
         # 格式: timestamp:"car_id",x,y,car_heading,car_center_x_diff,car_center_y_diff,angular_velocity_smooth,u,w\n
