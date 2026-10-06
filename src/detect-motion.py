@@ -363,7 +363,7 @@ class ToyCarTracker:
     def __init__(self):
         self.previous_frame = None
         self.blur_kernel = np.ones((40, 40), np.float32) / 1600.0
-        self.car_data = CarData()
+        self.car_data = {}
         self.histogram_frames = []
 
     # Recognise a car:
@@ -424,20 +424,32 @@ class ToyCarTracker:
         if contours is None:
             return frame, []
 
-        biggest_contour = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(biggest_contour) < 100:
-            return frame, []
+        udp_output_strings = []
+        detected_cars = {}
 
-        (centre_x, centre_y, width, height) = cv2.boundingRect(biggest_contour)
-        car_region = frame[centre_y:centre_y + height, centre_x:centre_x + width]
-        mask_region = thresholded[centre_y:centre_y + height, centre_x:centre_x + width]
-        self.car_data.car_name = self.recognise_car(car_region, mask_region)
-        if self.car_data.car_name is not None:
-            car_detected = True
+        for contour in contours:
+            if cv2.contourArea(contour) < 100:
+                continue
 
-        udp_output_string = self.car_data.car_detected(frame, current_time_us, biggest_contour)
+            (centre_x, centre_y, width, height) = cv2.boundingRect(contour)
+            car_region = frame[centre_y:centre_y + height, centre_x:centre_x + width]
+            mask_region = thresholded[centre_y:centre_y + height, centre_x:centre_x + width]
+            car_name = self.recognise_car(car_region, mask_region)
+            if car_name is None:
+                continue
 
-        return frame, [udp_output_string]
+            if car_name in detected_cars:
+                continue
+            detected_cars[car_name] = True
+
+            if car_name not in self.car_data:
+                self.car_data[car_name] = CarData()
+            car_data = self.car_data[car_name]
+            car_data.car_name = car_name
+
+            udp_output_strings.append(car_data.car_detected(frame, current_time_us, contour))
+
+        return frame, udp_output_strings
 
 
 def handle_frame(frame):
