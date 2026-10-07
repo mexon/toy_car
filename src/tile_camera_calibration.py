@@ -140,11 +140,16 @@ def process_frame(frame: np.ndarray, tile_size_cm: float = 60.0, crop_offset: tu
     h, w = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # 2. Morphological Black Top-Hat transform to enhance dark grid lines on bright floor
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+    # 1. Morphological Black Top-Hat transform to enhance dark grid lines on bright floor
+    image_size = gray.shape
+    min_dim = min(image_size[0], image_size[1])
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (min_dim // 50, min_dim // 50))
     tophat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
     blurred = cv2.GaussianBlur(tophat, (5, 5), 0)
-    edges = cv2.Canny(blurred, 30, 120)
+
+    # 2. Edge detection
+    max_blurred = cv2.minMaxLoc(blurred)[1]
+    edges = cv2.Canny(blurred, max_blurred // 2, 256)
 
     # 3. Probabilistic Hough Line Transform
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=80, minLineLength=80, maxLineGap=30)
