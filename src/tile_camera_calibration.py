@@ -84,34 +84,6 @@ def cluster_by_gap(items: list, max_gap: float = 25.0) -> list:
     return clusters
 
 
-def create_playing_field_mask(image: np.ndarray) -> np.ndarray:
-    """
-    Generates a binary mask of the valid floor playing field by masking out 
-    non-floor objects (e.g., red stool, white cabinet wall, power cables).
-    """
-    h, w = image.shape[:2]
-    mask = np.ones((h, w), dtype=np.uint8) * 255
-    
-    # 1. HSV Red color masking (filters out red stool)
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    mask_red1 = cv2.inRange(hsv, np.array([0, 70, 50]), np.array([10, 255, 255]))
-    mask_red2 = cv2.inRange(hsv, np.array([170, 70, 50]), np.array([180, 255, 255]))
-    mask_red = cv2.dilate(mask_red1 | mask_red2, 
-                          cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)), 
-                          iterations=2)
-    mask[mask_red > 0] = 0
-
-    # 2. Geometric masking for top-right cabinet wall
-    pts_cabinet = np.array([[int(w * 0.52), 0], [w, 0], [w, int(h * 0.24)], [int(w * 0.75), int(h * 0.24)]], np.int32)
-    cv2.fillPoly(mask, [pts_cabinet], 0)
-
-    # 3. Geometric masking for far-right wall cables
-    pts_cables = np.array([[int(w * 0.88), int(h * 0.39)], [w, int(h * 0.35)], [w, h], [int(w * 0.88), h]], np.int32)
-    cv2.fillPoly(mask, [pts_cables], 0)
-
-    return mask
-
-
 def draw_high_contrast_label(img: np.ndarray, text: str, pos: tuple, text_color=(0, 255, 255), bg_color=(0, 0, 0)):
     """
     Draws text with a solid high-contrast background bounding box for maximum readability.
@@ -167,9 +139,6 @@ def process_frame(frame: np.ndarray, tile_size_cm: float = 60.0, crop_offset: tu
     """
     h, w = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # 1. Create playing field mask (exclude non-tile objects)
-    floor_mask = create_playing_field_mask(frame)
 
     # 2. Morphological Black Top-Hat transform to enhance dark grid lines on bright floor
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
@@ -235,18 +204,16 @@ def process_frame(frame: np.ndarray, tile_size_cm: float = 60.0, crop_offset: tu
                 px, py = pt[0], pt[1]
                 if 0 <= px < w and 0 <= py < h:
                     ix, iy = int(round(px)), int(round(py))
-                    # Validate point falls within clean playing field floor
-                    if floor_mask[iy, ix] > 0:
-                        raw_intersections.append({
-                            'col_idx': col_idx + 1,
-                            'row_idx': row_idx + 1,
-                            'col_label': f"{ordinal(col_idx + 1)} from left",
-                            'row_label': f"{ordinal(row_idx + 1)} from bottom",
-                            'short_label': f"({col_idx+1}L, {row_idx+1}B)",
-                            'pt_img': np.array([px, py], dtype=np.float32),
-                            'pt_img_uncropped': np.array([px + ox, py + oy], dtype=np.float32),
-                            'pt_real': np.array([col_idx * tile_size_cm, row_idx * tile_size_cm], dtype=np.float32)
-                        })
+                    raw_intersections.append({
+                        'col_idx': col_idx + 1,
+                        'row_idx': row_idx + 1,
+                        'col_label': f"{ordinal(col_idx + 1)} from left",
+                        'row_label': f"{ordinal(row_idx + 1)} from bottom",
+                        'short_label': f"({col_idx+1}L, {row_idx+1}B)",
+                        'pt_img': np.array([px, py], dtype=np.float32),
+                        'pt_img_uncropped': np.array([px + ox, py + oy], dtype=np.float32),
+                        'pt_real': np.array([col_idx * tile_size_cm, row_idx * tile_size_cm], dtype=np.float32)
+                    })
 
     if not raw_intersections:
         return [], frame, None
