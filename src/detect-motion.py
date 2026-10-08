@@ -5,6 +5,7 @@ import time
 import socket
 import math
 import sys
+import tile_calibration
 
 # ==========================================
 # 1. UDP 網路設定 (作業規格: Port 5000)
@@ -26,25 +27,13 @@ if not os.path.exists(video_path):
 # ==========================================
 # 3. 2D 像素 -> 3D/2D 真實世界座標校正 (Homography)
 # ==========================================
-# 請根據你畫面中場地四個角的像素點進行調整 (u, v)
-# 此處以標準 1280x720 畫面範例角點為例：
-pts_image = np.array([
-    [100, 100],   # 左上角像素 (u, v)
-    [1180, 100],  # 右上角像素 (u, v)
-    [1180, 620],  # 右下角像素 (u, v)
-    [100, 620]    # 左下角像素 (u, v)
-], dtype=np.float32)
+pts_image = None
 
 # 對應的真實世界 2D 座標 (單位: mm，場地 2.5m x 1.5m = 2500mm x 1500mm)
-pts_real = np.array([
-    [0.0, 0.0],          # 左上角
-    [2500.0, 0.0],       # 右上角
-    [2500.0, 1500.0],    # 右下角
-    [0.0, 1500.0]        # 左下角
-], dtype=np.float32)
+pts_real = None
 
 # 計算單應性矩陣 H
-H_matrix, _ = cv2.findHomography(pts_image, pts_real)
+H_matrix = None
 
 # Car histograms computed by script calculate-histogram-for-car.py
 car_hue_histograms = {
@@ -498,6 +487,33 @@ while cap.isOpened():
     if not ret:
         print("影片播放完畢。")
         break
+
+    if H_matrix is None:
+        calibration = tile_calibration.calibrate_from_frame(frame)
+        if calibration is not None:
+            pts_image = calibration.pts_image
+            pts_real = calibration.pts_real
+            H_matrix = calibration.H
+        else:
+            # 請根據你畫面中場地四個角的像素點進行調整 (u, v)
+            # 此處以標準 1280x720 畫面範例角點為例：
+            pts_image = np.array([
+                [100, 100],   # 左上角像素 (u, v)
+                [1180, 100],  # 右上角像素 (u, v)
+                [1180, 620],  # 右下角像素 (u, v)
+                [100, 620]    # 左下角像素 (u, v)
+            ], dtype=np.float32)
+    
+            # 對應的真實世界 2D 座標 (單位: mm，場地 2.5m x 1.5m = 2500mm x 1500mm)
+            pts_real = np.array([
+                [0.0, 0.0],          # 左上角
+                [2500.0, 0.0],       # 右上角
+                [2500.0, 1500.0],    # 右下角
+                [0.0, 1500.0]        # 左下角
+            ], dtype=np.float32)
+    
+            # 計算單應性矩陣 H
+            H_matrix, _ = cv2.findHomography(pts_image, pts_real)
 
     frame = handle_frame(frame)
     if frame is None:
