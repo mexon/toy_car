@@ -130,40 +130,62 @@ def _vp_filter(lines, tol_deg=1.5):
 SKIP_PENALTY_PX = 6.0   # a skipped tile must buy >6 px of RMS improvement
 
 
-def _fit_spacing(ts, max_skip=3):
+def _eval_gaps(ts, gaps):
+    n = len(ts)
+    k = np.concatenate([[0], np.cumsum(gaps)]).astype(float)
+    # t*(c*k+1) = a*k + b   ->   t = a*k + b - c*k*t
+    M = np.column_stack([k, np.ones(n), -k * ts])
+    sol, *_ = np.linalg.lstsq(M, ts, rcond=None)
+    a_, b_, c_ = sol
+    den = c_ * k + 1
+    if np.any(den <= 1e-6):
+        return None
+    pred = (a_ * k + b_) / den
+    rms = float(np.sqrt(np.mean((pred - ts) ** 2)))
+    return k.astype(int).tolist(), rms, rms + SKIP_PENALTY_PX * (sum(gaps) - (n - 1))
+
+
+def _fit_spacing(ts, accept_rms=3.0, max_gap=3, max_skipped_gaps=2):
     """
     ts: sorted positions of lines along a transversal.  Equal world spacing
-    maps to t = (a*k + b) / (c*k + 1) for integer k.  Brute-force the integer
-    gaps (1..max_skip tiles between consecutive lines), return the assignment
-    with the lowest RMS residual (small penalty per skipped tile).
+    maps to t = (a*k + b) / (c*k + 1) for integer k.
+    Fast path: if consecutive indices already fit, return immediately.
+    Otherwise search only patterns where at most `max_skipped_gaps` gaps are 2..max_gap
+    tiles wide (a few missing lines), which keeps this cheap even with many lines.
     """
     n = len(ts)
     if n < 3:
         return list(range(n)), 0.0, 0.0
     ts = np.asarray(ts, float)
-    best = (None, np.inf, np.inf)  # ks, rms, score
-    for gaps in product(range(1, max_skip + 1), repeat=n - 1):
-        k = np.concatenate([[0], np.cumsum(gaps)]).astype(float)
-        # t*(c*k+1) = a*k + b   ->   t = a*k + b - c*k*t
-        M = np.column_stack([k, np.ones(n), -k * ts])
-        sol, *_ = np.linalg.lstsq(M, ts, rcond=None)
-        a, b, c = sol
-        den = c * k + 1
-        if np.any(den <= 1e-6):
-            continue
-        pred = (a * k + b) / den
-        rms = float(np.sqrt(np.mean((pred - ts) ** 2)))
-        score = rms + SKIP_PENALTY_PX * (sum(gaps) - (n - 1))
-        if score < best[2]:
-            best = (k.astype(int).tolist(), rms, score)
-    if best[0] is None:
-        return list(range(n)), np.inf, np.inf
-    return best[0], best[1], best[2]
+    base = [1] * (n - 1)
+    r0 = _eval_gaps(ts, base)
+    if r0 is not None and r0[1] <= accept_rms:
+        return r0
+    best = r0 if r0 is not None else (list(range(n)), np.inf, np.inf)
+    for m in range(1, max_skipped_gaps + 1):
+        for pos in combinations(range(n - 1), m):
+            for vals in product(range(2, max_gap + 1), repeat=m):
+                gaps = base[:]
+                for p, v in zip(pos, vals):
+                    gaps[p] = v
+                r = _eval_gaps(ts, gaps)
+                if r is not None and r[2] < best[2]:
+                    best = r
+    return best
 
 
 def _spacing_filter(lines, rms_tol=3.0, max_drop=3):
     """Drop lines that break the equal-tile-spacing pattern, assign indices."""
     lines = sorted(lines, key=lambda l: l.pos)
+    if len(lines) == 3:
+        # 3 lines fit any spacing exactly, so use a plausibility test instead:
+        # neighbouring tiles have similar widths; a gap ~2x the other = missing line
+        g1, g2 = lines[1].pos - lines[0].pos, lines[2].pos - lines[1].pos
+        if min(g1, g2) <= 0 or max(g1, g2) / min(g1, g2) > 1.6:
+            return [], np.inf
+        for i, l in enumerate(lines):
+            l.idx = i
+        return lines, 0.0
     ks, rms, score = _fit_spacing([l.pos for l in lines])
     drops = 0
     while rms > rms_tol and len(lines) > 4 and drops < max_drop:
@@ -233,9 +255,17 @@ def _fail(msg):
 
 
 def calibrate_from_frame(frame, tile_size_cm=60.0, min_points=6,
-                         max_rms_cm=2.0, support_margin=30.0, min_lines=4,
-                         sat_thresh=70, draw_debug=True, ignore_top_frac=0.2):
+                         max_rms_cm=2.0, support_margin=30.0, min_lines=3,
+                         sat_thresh=70, draw_debug=True, ignore_top_frac=0.2,
+                         detect_long_side=900):
     """Return a Calibration or None if the grid could not be found reliably."""
+    full = frame
+    gray_full = cv2.cvtColor(full, cv2.COLOR_BGR2GRAY)
+    # Detect on a downscaled copy (all pixel thresholds below are tuned for ~900 px
+    # images, and it is much faster); results are mapped back to full resolution.
+    scale = min(1.0, detect_long_side / max(full.shape[:2]))
+    frame = cv2.resize(full, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else full
+    inv = 1.0 / scale
     h, w = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -253,7 +283,7 @@ def calibrate_from_frame(frame, tile_size_cm=60.0, min_points=6,
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=80,
                             minLineLength=80, maxLineGap=30)
     if lines is None:
-        _fail("no hough lines")
+        return _fail("no hough lines")
 
     ref_x, ref_y = w / 2.0, h / 2.0
     v_items, h_items = [], []
@@ -271,13 +301,13 @@ def calibrate_from_frame(frame, tile_size_cm=60.0, min_points=6,
     v_lines = _make_grid_lines(cluster_by_gap(v_items, 25.0), ref_x, ref_y, True)
     h_lines = _make_grid_lines(cluster_by_gap(h_items, 25.0), ref_x, ref_y, False)
     if len(v_lines) < 2 or len(h_lines) < 2:
-        _fail(f"too few raw lines v={len(v_lines)} h={len(h_lines)}")
+        return _fail(f"too few raw lines v={len(v_lines)} h={len(h_lines)}")
 
     v_lines, _ = _spacing_filter(_vp_filter(v_lines))
     h_lines, _ = _spacing_filter(_vp_filter(h_lines))
-    # with <4 lines a missing/extra line cannot be told apart from a real gap
+    # with only 3 lines a gap can only be checked heuristically (see _spacing_filter)
     if len(v_lines) < min_lines or len(h_lines) < min_lines:
-        _fail(f"too few lines after filter v={len(v_lines)} h={len(h_lines)}")
+        return _fail(f"too few lines after filter v={len(v_lines)} h={len(h_lines)}")
 
     # image y grows downward, so the largest-y line is the bottom one (row 1)
     max_row = max(l.idx for l in h_lines)
@@ -296,25 +326,33 @@ def calibrate_from_frame(frame, tile_size_cm=60.0, min_points=6,
             if _supported(vl, pt, support_margin) and _supported(hl, pt, support_margin):
                 found.append((vl.idx, hl.idx, pt))
     if len(found) < min_points:
-        _fail(f"too few supported intersections ({len(found)})")
+        return _fail(f"too few supported intersections ({len(found)})")
 
-    pts = np.array([f[2] for f in found], np.float32)
+    pts = np.array([f[2] for f in found], np.float32) * np.float32(inv)   # -> full-res pixels
     crit = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    pts = cv2.cornerSubPix(gray, pts.reshape(-1, 1, 2), (7, 7), (-1, -1), crit).reshape(-1, 2)
+    win = max(5, int(round(7 * inv)))
+    pts = cv2.cornerSubPix(gray_full, pts.reshape(-1, 1, 2), (win, win), (-1, -1), crit).reshape(-1, 2)
     real = np.array([[f[0] * tile_size_cm, f[1] * tile_size_cm] for f in found], np.float32)
 
-    H, mask = cv2.findHomography(pts, real, cv2.RANSAC, 5.0)  # 5 cm tolerance
-    if H is None:
-        _fail("homography failed")
+    if len(pts) < 4:
+        return _fail("fewer than 4 points")
+    try:
+        H, mask = cv2.findHomography(pts.reshape(-1, 1, 2), real.reshape(-1, 1, 2), cv2.RANSAC, 5.0)  # 5 cm
+    except cv2.error as e:
+        return _fail(f"opencv error: {str(e)[:60]}")
+    if H is None or mask is None:
+        return _fail("homography failed")
     keep = mask.ravel().astype(bool)
     if keep.sum() < min_points:
-        _fail("too few ransac inliers")
+        return _fail("too few ransac inliers")
     # refit on inliers, then measure error in cm
-    H, _ = cv2.findHomography(pts[keep], real[keep], 0)
+    H, _ = cv2.findHomography(pts[keep].reshape(-1, 1, 2), real[keep].reshape(-1, 1, 2), 0)
+    if H is None:
+        return _fail("homography refit failed")
     proj = cv2.perspectiveTransform(pts[keep].reshape(-1, 1, 2), H).reshape(-1, 2)
     rms = float(np.sqrt(np.mean(np.sum((proj - real[keep]) ** 2, axis=1))))
     if rms > max_rms_cm:
-        _fail(f"high reprojection error {rms:.1f} cm")
+        return _fail(f"high reprojection error {rms:.1f} cm")
 
     pts, real = pts[keep], real[keep]
     kept_found = [f for f, k in zip(found, keep) if k]
@@ -323,20 +361,22 @@ def calibrate_from_frame(frame, tile_size_cm=60.0, min_points=6,
 
     dbg = None
     if draw_debug:
-        dbg = frame.copy()
+        dbg = full.copy()
+        fh, fw = dbg.shape[:2]
+        th = max(1, int(round(inv * 0.8)))
+        fs = 0.4 * max(1.0, inv * 0.8)
+
+        def P(x, y):
+            return int(round(x * inv)), int(round(y * inv))
         for l in v_lines:
-            p0 = (int(-l.eq[2] / l.eq[0]), 0)
-            p1 = (int(-(l.eq[1] * h + l.eq[2]) / l.eq[0]), h)
-            cv2.line(dbg, p0, p1, (0, 255, 255), 1)
+            cv2.line(dbg, P(-l.eq[2] / l.eq[0], 0), P(-(l.eq[1] * h + l.eq[2]) / l.eq[0], h), (0, 255, 255), th)
         for l in h_lines:
-            p0 = (0, int(-l.eq[2] / l.eq[1]))
-            p1 = (w, int(-(l.eq[0] * w + l.eq[2]) / l.eq[1]))
-            cv2.line(dbg, p0, p1, (255, 255, 0), 1)
+            cv2.line(dbg, P(0, -l.eq[2] / l.eq[1]), P(w, -(l.eq[0] * w + l.eq[2]) / l.eq[1]), (255, 255, 0), th)
         for c, p in zip(corners, pts):
             q = (int(round(p[0])), int(round(p[1])))
-            cv2.circle(dbg, q, 5, (0, 255, 0), 2)
-            cv2.putText(dbg, c["label"], (q[0] + 6, q[1] - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.circle(dbg, q, int(5 * max(1.0, inv * 0.8)), (0, 255, 0), th + 1)
+            cv2.putText(dbg, c["label"], (q[0] + 8, q[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, fs,
+                        (0, 0, 255), th, cv2.LINE_AA)
 
     return Calibration(pts.astype(np.float32), real.astype(np.float32), H, rms, corners, dbg)
 

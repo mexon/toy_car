@@ -49,6 +49,7 @@ def main():
     results, frame_i, tested = [], -1, 0
     fail_reasons = {}
     best, worst_frame = None, None
+    all_H = []
     while tested < args.max_frames:
         ok, frame = cap.read()
         if not ok:
@@ -69,6 +70,7 @@ def main():
             if worst_frame is None:
                 worst_frame = frame.copy()
             continue
+        all_H.append(cal.H)
         results.append({"frame": frame_i, "ok": True, "n_points": len(cal.pts_image),
                         "rms_cm": round(cal.rms_cm, 3)})
         # best = most points, then lowest error
@@ -97,25 +99,8 @@ def main():
     ref_grid = np.array([[x, y] for x in range(0, 181, 60) for y in range(0, 241, 60)], np.float32)
     ref_px = project_real_to_image(best_cal.H, ref_grid)
 
-    cap = cv2.VideoCapture(int(args.source) if args.source.isdigit() else args.source)
-    shifts, fi = [], -1
-    ok_frames = {r["frame"] for r in ok_res}
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        fi += 1
-        if fi not in ok_frames:
-            continue
-        if ROTATE[args.rotate] is not None:
-            frame = cv2.rotate(frame, ROTATE[args.rotate])
-        cal = calibrate_from_frame(frame, tile_size_cm=args.tile_size, draw_debug=False)
-        if cal is None:
-            continue
-        px = project_real_to_image(cal.H, ref_grid)
-        shifts.append(float(np.median(np.linalg.norm(px - ref_px, axis=1))))
-    cap.release()
-
+    shifts = [float(np.median(np.linalg.norm(project_real_to_image(H, ref_grid) - ref_px, axis=1)))
+              for H in all_H]
     shifts = np.array(shifts)
     n_pts = [r["n_points"] for r in ok_res]
     rms = [r["rms_cm"] for r in ok_res]

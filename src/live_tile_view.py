@@ -136,7 +136,11 @@ def main():
                 break
 
         if not args.no_display:
-            cv2.imshow("Live tile grid (q quit)", view)
+            shown = view
+            if view.shape[1] > 1100 or view.shape[0] > 800:   # fit window to a normal screen
+                k = min(1100 / view.shape[1], 800 / view.shape[0])
+                shown = cv2.resize(view, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
+            cv2.imshow("Live tile grid (q quit)", shown)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
@@ -158,7 +162,8 @@ def main():
     cap.release()
     if writer:
         writer.release()
-    cv2.destroyAllWindows()
+    if not args.no_display:
+        cv2.destroyAllWindows()
     total = n_ok + n_fail
     if total:
         print(f"Processed {n} frames; detection ran {total} times, ok {n_ok} ({100*n_ok/total:.0f}%), "
