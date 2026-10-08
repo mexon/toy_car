@@ -23,3 +23,19 @@ A histogram is computed using 8 buckets.  This was intended to separate yellow f
 The computed histogram is compared as a vector against the average of the histograms of earlier training runs.  The available training histogram with the smallest vector distance to the observed histogram is used as the classification.
 
 This classification also changes the structure of the code: there is now a `CarData` class to hold separate motion data for the two cars in the field.  Classification allows separating this data, and supporting detection of multiple cars on the same playing field.
+
+# Evaluation
+
+No objective evaluation was conducted of the performance of the system.
+
+Evaluation of performance requires an objective ground truth against which to compare the output of the implementation.  In this case there is no objective information about the position of the toy cars in millimeters.  A typical test setup would solve this problem by introducing additional sensors or controlled conditions that would allow completely accurate ground truth measurement.  In this case, however, we only have sensor (camera) data that is the same as the real test environment.
+
+Another common approach to dealing with the ground truth problem is to perform competitor analysis: comparing the results of our implementation against results from competing implementations.  In this case we are fortunate that there are several independent implementations.  However, since all these implementations are under development simultaneously, it is not practical to make such a comparison before submission.  It would be a useful exercise to run exactly such a comparison after all implementations have been submitted.
+
+Nevertheless, a common problem with competitor analysis comes when your own implementation outperforms all competitors, at least in a subset of cases.  The metric cannot evaluate the additional performance in such cases, they are invisible.  If the metric is used to direct development efforts, it can lead to the implementation actually becoming worse.
+
+Furthermore, in order to accurately assess performance, tests should be run on a representative selection of inputs.  Typically performance evaluation results are part of a feedback loop that guide further development.  Effectively the implementation loop becomes an optimisation problem for the performance metric.  If the metric is assessed against data that does not reflect the real operating environment, the developed system will converge to a suboptimal design.  During our development work, we already encountered such effects: some implementations were tested against low-resolution video files, but failed when tested against high-resolution video files.
+
+In this case we do not have test data that accurately reflects the real test environment.  Therefore any performance evaluation results would be suspect.
+
+One option for evaluating positioning accuracy would be to exploit the fact that the test environment is flat, and so the toy car should achieve the same top speed in all directions.  By driving the car in straight lines in various directions during a calibration run, we can assess whether the velocity calculated by the system is constant.  The metric in this case is the variance in the measured velocity.  However, the currently gathered test data is not suitable for this purpose, since it consists of the cars driving along random trajectories.
