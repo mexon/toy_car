@@ -39,3 +39,18 @@ Furthermore, in order to accurately assess performance, tests should be run on a
 In this case we do not have test data that accurately reflects the real test environment.  Therefore any performance evaluation results would be suspect.
 
 One option for evaluating positioning accuracy would be to exploit the fact that the test environment is flat, and so the toy car should achieve the same top speed in all directions.  By driving the car in straight lines in various directions during a calibration run, we can assess whether the velocity calculated by the system is constant.  The metric in this case is the variance in the measured velocity.  However, the currently gathered test data is not suitable for this purpose, since it consists of the cars driving along random trajectories.
+
+# Position and velocity calculation using detected car positions
+The position, velocity, and angular velocity of the car are calculated in the CarData class. After the car is detected, the OpenCV minAreaRect() function is used to obtain a rotated bounding rectangle around the detected contour. The center of this rectangle is used as the estimated position of the car.
+The detected position is converted into real-world coordinates before calculating velocity. The program stores the previous position and timestamp, then compares them with the current values to calculate the displacement over time.
+
+# Transformation of screen position into real-world position using known coordinates
+The program uses a homography transformation to convert positions from image pixel coordinates into real-world coordinates. This is necessary because the camera measures positions in pixels, while the physical position of the car needs to be expressed in millimeters.
+The transformation is calculated using four corresponding points between the image and the real-world playing field. The field dimensions are defined as 2500 mm × 1500 mm.
+The OpenCV findHomography() function is used to calculate the transformation matrix H_matrix. The image_to_real() function then applies this matrix to convert image coordinates (u, v) into real-world coordinates (X, Y).
+
+# Detection of orientation
+The orientation of the car is estimated using a combination of the OpenCV minAreaRect() function and HSV color detection.
+Initially, minAreaRect() is used to determine the main axis of the detected car. However, this method cannot distinguish between the front and rear of the car. It only provides an axis with a 180-degree ambiguity.
+To address this limitation, HSV color detection was added to identify the blue marker located at the front of the car. The detect_blue_front() function converts the image into HSV color space and applies a predefined color threshold to detect blue pixels within the car's bounding region.
+However, the orientation detection is still sometimes unstable. Changes in lighting conditions, inaccuracies in the detected contour, and variations in the blue marker position can affect the estimated heading. Further improvements are needed to make the orientation detection more reliable.
